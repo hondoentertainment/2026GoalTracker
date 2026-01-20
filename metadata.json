@@ -1,0 +1,7 @@
+{
+  "name": "2026 Execution Blueprint",
+  "description": "A high-performance dashboard for tracking the 2026 Execution Blueprint, covering Creative Work, Tech, Media, Health, and a weekly Scoreboard.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
