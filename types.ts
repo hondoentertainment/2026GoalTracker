@@ -32,3 +32,84 @@ export interface WeeklyData {
   mediaLogged: number; // films + albums
   weightTrend: 'down' | 'stable' | 'up';
 }
+
+// --- Data Entry Types ---
+
+export interface WritingEntry {
+  id: string;
+  date: string; // ISO date string YYYY-MM-DD
+  project: 'xavier-transport' | 'which-direction-home' | 'schafer-cookbook';
+  wordCount: number;
+  sessionMinutes: number;
+  notes: string;
+}
+
+export interface TechLogEntry {
+  id: string;
+  date: string;
+  project: 'deep-seats' | 'side-app' | 'ai-learning';
+  task: string;
+  hoursSpent: number;
+  milestone: string;
+  completed: boolean;
+}
+
+export interface MediaEntry {
+  id: string;
+  date: string;
+  type: 'book' | 'film' | 'album';
+  title: string;
+  creator: string; // author, director, or artist
+  rating?: number; // 1-5
+  notes: string;
+  completed: boolean;
+}
+
+export interface HealthEntry {
+  id: string;
+  date: string;
+  steps: number;
+  weight?: number;
+  liftingSession: boolean;
+  freeMealUsed: boolean;
+  notes: string;
+}
+
+export interface WeeklyChecklistItem {
+  id: string;
+  weekNumber: number;
+  label: string;
+  completed: boolean;
+}
+
+// --- Aggregated State ---
+
+export interface CreativeState {
+  writingEntries: WritingEntry[];
+  streakDays: number;
+  lastWritingDate: string | null;
+}
+
+export interface TechState {
+  logEntries: TechLogEntry[];
+  deepSeatsProgress: number; // 0-100
+  currentPhase: number; // 1-4
+  sideAppName: string;
+  sideAppDaysRemaining: number;
+}
+
+export interface MediaState {
+  entries: MediaEntry[];
+}
+
+export interface HealthState {
+  entries: HealthEntry[];
+}
+
+export interface AppData {
+  creative: CreativeState;
+  tech: TechState;
+  media: MediaState;
+  health: HealthState;
+  weeklyChecklist: WeeklyChecklistItem[];
+}
