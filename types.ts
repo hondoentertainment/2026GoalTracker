@@ -112,4 +112,30 @@ export interface AppData {
   media: MediaState;
   health: HealthState;
   weeklyChecklist: WeeklyChecklistItem[];
+  coachMessages: CoachMessage[];
+  checklistTemplates: string[];
+}
+
+// --- Coach ---
+
+export interface CoachMessage {
+  role: 'user' | 'coach';
+  text: string;
+  timestamp: string;
+}
+
+// --- Validation ---
+
+export interface ValidationResult {
+  valid: boolean;
+  error?: string;
+}
+
+// --- Toast ---
+
+export interface ToastMessage {
+  id: string;
+  text: string;
+  type: 'success' | 'error' | 'info';
+  undoAction?: () => void;
 }

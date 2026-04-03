@@ -6,6 +6,8 @@ import {
   MediaEntry,
   HealthEntry,
   WeeklyChecklistItem,
+  CoachMessage,
+  ValidationResult,
 } from '../types';
 
 const STORAGE_KEY = '2026-blueprint-data';
@@ -30,6 +32,8 @@ const DEFAULT_DATA: AppData = {
     entries: [],
   },
   weeklyChecklist: [],
+  coachMessages: [],
+  checklistTemplates: [],
 };
 
 // --- Core Read/Write ---
@@ -490,6 +494,265 @@ export function updateChecklistItemLabel(id: string, label: string): void {
     item.label = label;
     saveData(data);
   }
+}
+
+// --- Data Import ---
+
+export function importDataFromJSON(jsonString: string): { success: boolean; error?: string } {
+  try {
+    const parsed = JSON.parse(jsonString);
+    if (!parsed.creative || !parsed.tech || !parsed.media || !parsed.health) {
+      return { success: false, error: 'Invalid backup format: missing required data sections.' };
+    }
+    const data = { ...cloneDefault(), ...parsed };
+    saveData(data);
+    return { success: true };
+  } catch {
+    return { success: false, error: 'Failed to parse JSON. Make sure the file is a valid backup.' };
+  }
+}
+
+// --- Coach Message Persistence ---
+
+export function getCoachMessages(): CoachMessage[] {
+  return loadData().coachMessages;
+}
+
+export function saveCoachMessage(message: CoachMessage): void {
+  const data = loadData();
+  data.coachMessages.push(message);
+  // Keep last 100 messages to avoid bloating localStorage
+  if (data.coachMessages.length > 100) {
+    data.coachMessages = data.coachMessages.slice(-100);
+  }
+  saveData(data);
+}
+
+export function clearCoachMessages(): void {
+  const data = loadData();
+  data.coachMessages = [];
+  saveData(data);
+}
+
+// --- Checklist Templating ---
+
+export function saveChecklistAsTemplate(weekNumber: number): void {
+  const data = loadData();
+  const items = data.weeklyChecklist.filter(c => c.weekNumber === weekNumber);
+  data.checklistTemplates = items.map(i => i.label);
+  saveData(data);
+}
+
+export function getChecklistTemplate(): string[] {
+  return loadData().checklistTemplates;
+}
+
+export function applyChecklistTemplate(weekNumber: number): WeeklyChecklistItem[] {
+  const data = loadData();
+  const template = data.checklistTemplates;
+  if (template.length === 0) return getWeeklyChecklist(weekNumber);
+
+  // Remove existing items for this week
+  data.weeklyChecklist = data.weeklyChecklist.filter(c => c.weekNumber !== weekNumber);
+
+  const newItems: WeeklyChecklistItem[] = template.map(label => ({
+    id: generateId(),
+    weekNumber,
+    label,
+    completed: false,
+  }));
+  data.weeklyChecklist.push(...newItems);
+  saveData(data);
+  return newItems;
+}
+
+// --- Side App CRUD ---
+
+export function updateSideApp(name: string, daysRemaining: number): void {
+  const data = loadData();
+  data.tech.sideAppName = name;
+  data.tech.sideAppDaysRemaining = Math.max(0, daysRemaining);
+  saveData(data);
+}
+
+// --- Date Validation ---
+
+export function validateDate(dateStr: string): ValidationResult {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return { valid: false, error: 'Date must be in YYYY-MM-DD format.' };
+  }
+  const date = new Date(dateStr + 'T00:00:00');
+  if (isNaN(date.getTime())) {
+    return { valid: false, error: 'Invalid date.' };
+  }
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  if (date > today) {
+    return { valid: false, error: 'Cannot log entries for future dates.' };
+  }
+  const yearStart = new Date(new Date().getFullYear(), 0, 1);
+  if (date < yearStart) {
+    return { valid: false, error: 'Date must be in the current year.' };
+  }
+  return { valid: true };
+}
+
+export function validateWritingEntry(wordCount: number, sessionMinutes: number): ValidationResult {
+  if (wordCount <= 0) return { valid: false, error: 'Word count must be greater than 0.' };
+  if (wordCount > 50000) return { valid: false, error: 'Word count seems unrealistic (max 50,000).' };
+  if (sessionMinutes <= 0) return { valid: false, error: 'Duration must be greater than 0.' };
+  if (sessionMinutes > 1440) return { valid: false, error: 'Duration cannot exceed 24 hours.' };
+  return { valid: true };
+}
+
+export function validateHealthEntry(steps: number, weight?: number): ValidationResult {
+  if (isNaN(steps) || steps < 0) return { valid: false, error: 'Steps must be a non-negative number.' };
+  if (steps > 100000) return { valid: false, error: 'Steps seem unrealistic (max 100,000).' };
+  if (weight !== undefined) {
+    if (weight <= 0) return { valid: false, error: 'Weight must be positive.' };
+    if (weight > 1000) return { valid: false, error: 'Weight seems unrealistic.' };
+  }
+  return { valid: true };
+}
+
+export function validateTechEntry(task: string, hours: number): ValidationResult {
+  if (!task.trim()) return { valid: false, error: 'Task description is required.' };
+  if (hours <= 0) return { valid: false, error: 'Hours must be greater than 0.' };
+  if (hours > 24) return { valid: false, error: 'Hours cannot exceed 24.' };
+  return { valid: true };
+}
+
+// --- Streak Warning ---
+
+export function getStreakWarning(): { atRisk: boolean; message: string; daysWithout: number } {
+  const data = loadData();
+  const lastDate = data.creative.lastWritingDate;
+  const streak = data.creative.streakDays;
+
+  if (!lastDate || streak === 0) {
+    return { atRisk: false, message: '', daysWithout: 0 };
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const last = new Date(lastDate + 'T00:00:00');
+  const diffDays = Math.floor((today.getTime() - last.getTime()) / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) {
+    return { atRisk: false, message: '', daysWithout: 0 };
+  }
+  if (diffDays === 1) {
+    return { atRisk: true, message: `Write today to keep your ${streak}-day streak alive!`, daysWithout: 1 };
+  }
+  if (diffDays === 2) {
+    return { atRisk: true, message: `Last chance! Write now or lose your ${streak}-day streak.`, daysWithout: 2 };
+  }
+  return { atRisk: false, message: `Streak ended at ${streak} days. Start a new one today!`, daysWithout: diffDays };
+}
+
+// --- Cumulative Data ---
+
+export function getCumulativeWords(): { week: number; cumulative: number }[] {
+  const week = getCurrentWeekNumber();
+  let total = 0;
+  const result: { week: number; cumulative: number }[] = [];
+  for (let w = 1; w <= week; w++) {
+    total += getWeekWordCount(w);
+    result.push({ week: w, cumulative: total });
+  }
+  return result;
+}
+
+export function getCumulativeMedia(): { week: number; books: number; films: number; albums: number }[] {
+  const data = loadData();
+  const week = getCurrentWeekNumber();
+  const year = new Date().getFullYear();
+  let books = 0, films = 0, albums = 0;
+  const result: { week: number; books: number; films: number; albums: number }[] = [];
+
+  for (let w = 1; w <= week; w++) {
+    const weekDatesSet = new Set(getWeekDates(year, w));
+    const weekMedia = data.media.entries.filter(e => e.completed && weekDatesSet.has(e.date));
+    books += weekMedia.filter(e => e.type === 'book').length;
+    films += weekMedia.filter(e => e.type === 'film').length;
+    albums += weekMedia.filter(e => e.type === 'album').length;
+    result.push({ week: w, books, films, albums });
+  }
+  return result;
+}
+
+// --- Weekly Digest ---
+
+export function getWeeklyDigest(weekNumber: number): string {
+  const year = new Date().getFullYear();
+  const weekDatesSet = new Set(getWeekDates(year, weekNumber));
+  const data = loadData();
+
+  const writingEntries = data.creative.writingEntries.filter(e => weekDatesSet.has(e.date));
+  const totalWords = writingEntries.reduce((s, e) => s + e.wordCount, 0);
+  const writingDays = new Set(writingEntries.map(e => e.date)).size;
+
+  const techEntries = data.tech.logEntries.filter(e => weekDatesSet.has(e.date));
+  const techHours = techEntries.reduce((s, e) => s + e.hoursSpent, 0);
+  const techCompleted = techEntries.filter(e => e.completed).length;
+
+  const mediaEntries = data.media.entries.filter(e => e.completed && weekDatesSet.has(e.date));
+  const mediaBooks = mediaEntries.filter(e => e.type === 'book').length;
+  const mediaFilms = mediaEntries.filter(e => e.type === 'film').length;
+  const mediaAlbums = mediaEntries.filter(e => e.type === 'album').length;
+
+  const healthEntries = data.health.entries.filter(e => weekDatesSet.has(e.date));
+  const avgSteps = healthEntries.length > 0
+    ? Math.round(healthEntries.reduce((s, e) => s + e.steps, 0) / healthEntries.length)
+    : 0;
+  const liftSessions = healthEntries.filter(e => e.liftingSession).length;
+
+  const checklist = data.weeklyChecklist.filter(c => c.weekNumber === weekNumber);
+  const checklistDone = checklist.filter(c => c.completed).length;
+
+  const lines = [
+    `Week ${weekNumber} Summary`,
+    `========================`,
+    ``,
+    `Writing: ${writingDays}/7 days, ${totalWords.toLocaleString()} words`,
+    `Tech: ${techHours.toFixed(1)} hours, ${techCompleted} tasks completed`,
+    `Media: ${mediaBooks} books, ${mediaFilms} films, ${mediaAlbums} albums`,
+    `Health: ${avgSteps.toLocaleString()} avg steps, ${liftSessions}/3 lifts`,
+    `Checklist: ${checklistDone}/${checklist.length} completed`,
+    ``,
+    `Streak: ${data.creative.streakDays} days`,
+    `Deep Seats: ${data.tech.deepSeatsProgress}%`,
+  ];
+
+  return lines.join('\n');
+}
+
+// --- Today's Status ---
+
+export function getTodayStatus(): {
+  wroteToday: boolean;
+  loggedHealth: boolean;
+  loggedTech: boolean;
+  loggedMedia: boolean;
+  todayWords: number;
+  todaySteps: number;
+} {
+  const today = getTodayString();
+  const data = loadData();
+
+  const todayWriting = data.creative.writingEntries.filter(e => e.date === today);
+  const todayHealth = data.health.entries.filter(e => e.date === today);
+  const todayTech = data.tech.logEntries.filter(e => e.date === today);
+  const todayMedia = data.media.entries.filter(e => e.date === today);
+
+  return {
+    wroteToday: todayWriting.length > 0,
+    loggedHealth: todayHealth.length > 0,
+    loggedTech: todayTech.length > 0,
+    loggedMedia: todayMedia.length > 0,
+    todayWords: todayWriting.reduce((s, e) => s + e.wordCount, 0),
+    todaySteps: todayHealth.length > 0 ? todayHealth[0].steps : 0,
+  };
 }
 
 // --- Summary for AI Coach ---
