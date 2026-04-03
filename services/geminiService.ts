@@ -17,16 +17,18 @@ Blueprint Details:
 4. Health: 8k steps, 3x Lift/wk, Weekly average weight matters.
 
 When asked, provide motivation, creative prompts for Xavier Transport, technical advice for Deep Seats, or encouragement for health habits.
+Reference the user's actual progress numbers from the LIVE DATA section below when giving advice. Be specific — mention their real streak count, word totals, completion percentages, and weekly stats to make your coaching concrete and personalized.
 `;
 
-export const getCoachResponse = async (userPrompt: string) => {
+export const getCoachResponse = async (userPrompt: string, dataSummary: string) => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const systemInstruction = `${BLUEPRINT_CONTEXT}\n--- LIVE DATA ---\n${dataSummary}`;
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: userPrompt,
       config: {
-        systemInstruction: BLUEPRINT_CONTEXT,
+        systemInstruction,
         temperature: 0.7,
       },
     });

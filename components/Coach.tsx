@@ -1,7 +1,8 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { getCoachResponse } from '../services/geminiService';
-import { Send, User, Bot, Loader2 } from 'lucide-react';
+import { getDataSummaryForCoach } from '../services/storageService';
+import { Send, User, Bot, Loader2, ChevronDown, ChevronUp, BarChart3 } from 'lucide-react';
 
 const Coach: React.FC = () => {
   const [messages, setMessages] = useState<{ role: 'user' | 'coach'; text: string }[]>([
@@ -9,6 +10,8 @@ const Coach: React.FC = () => {
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [statsOpen, setStatsOpen] = useState(false);
+  const [dataSummary, setDataSummary] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -16,6 +19,10 @@ const Coach: React.FC = () => {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
+
+  useEffect(() => {
+    setDataSummary(getDataSummaryForCoach());
+  }, []);
 
   const handleSend = async () => {
     if (!input.trim() || loading) return;
@@ -25,10 +32,14 @@ const Coach: React.FC = () => {
     setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
     setLoading(true);
 
-    const response = await getCoachResponse(userMsg);
+    const freshSummary = getDataSummaryForCoach();
+    setDataSummary(freshSummary);
+    const response = await getCoachResponse(userMsg, freshSummary);
     setMessages(prev => [...prev, { role: 'coach', text: response || "No response." }]);
     setLoading(false);
   };
+
+  const summaryLines = dataSummary.trim().split('\n').filter(l => l.trim());
 
   return (
     <div className="bg-slate-900/50 border border-slate-800 rounded-2xl flex flex-col h-[500px] overflow-hidden">
@@ -39,13 +50,39 @@ const Coach: React.FC = () => {
         </h3>
         <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-bold uppercase tracking-widest">Powered by Gemini</span>
       </div>
-      
+
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* Current Stats collapsible section */}
+        <div className="bg-slate-800/50 rounded-xl border border-slate-700/50">
+          <button
+            onClick={() => setStatsOpen(prev => !prev)}
+            className="w-full flex items-center justify-between px-4 py-2.5 text-xs text-slate-400 hover:text-slate-300 transition-colors"
+          >
+            <span className="flex items-center space-x-2">
+              <BarChart3 size={14} className="text-blue-400" />
+              <span className="font-medium">Current Stats</span>
+              <span className="text-slate-500">&mdash; what the coach sees</span>
+            </span>
+            {statsOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+          {statsOpen && (
+            <div className="px-4 pb-3 pt-1 border-t border-slate-700/50">
+              <ul className="space-y-1">
+                {summaryLines.map((line, i) => (
+                  <li key={i} className="text-xs text-slate-400 leading-relaxed">
+                    {line.startsWith('-') ? line : <span className="font-semibold text-slate-300">{line}</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+
         {messages.map((m, i) => (
           <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div className={`max-w-[85%] rounded-2xl p-4 text-sm leading-relaxed ${
-              m.role === 'user' 
-                ? 'bg-blue-600 text-white rounded-tr-none' 
+              m.role === 'user'
+                ? 'bg-blue-600 text-white rounded-tr-none'
                 : 'bg-slate-800 text-slate-200 rounded-tl-none border border-slate-700'
             }`}>
               {m.text}
