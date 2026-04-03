@@ -29,6 +29,7 @@ const Health: React.FC = () => {
   const [formLifting, setFormLifting] = useState(false);
   const [formFreeMeal, setFormFreeMeal] = useState(false);
   const [formNotes, setFormNotes] = useState('');
+  const [formError, setFormError] = useState('');
 
   const currentWeek = getCurrentWeekNumber();
 
@@ -92,8 +93,16 @@ const Health: React.FC = () => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const steps = parseInt(formSteps, 10);
-    if (isNaN(steps) || steps < 0) return;
+    if (isNaN(steps) || steps < 0) {
+      setFormError('Steps must be a valid non-negative number.');
+      return;
+    }
     const weight = formWeight ? parseFloat(formWeight) : undefined;
+    if (formWeight && (isNaN(weight!) || weight! <= 0)) {
+      setFormError('Weight must be a valid positive number.');
+      return;
+    }
+    setFormError('');
 
     addHealthEntry({
       date: formDate,
@@ -229,6 +238,9 @@ const Health: React.FC = () => {
               />
             </div>
           </div>
+          {formError && (
+            <p className="text-red-400 text-xs font-medium">{formError}</p>
+          )}
           <div className="flex space-x-3 pt-2">
             <button
               type="submit"

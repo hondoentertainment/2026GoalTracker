@@ -34,13 +34,17 @@ const DEFAULT_DATA: AppData = {
 
 // --- Core Read/Write ---
 
+function cloneDefault(): AppData {
+  return JSON.parse(JSON.stringify(DEFAULT_DATA));
+}
+
 export function loadData(): AppData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_DATA;
-    return { ...DEFAULT_DATA, ...JSON.parse(raw) };
+    if (!raw) return cloneDefault();
+    return { ...cloneDefault(), ...JSON.parse(raw) };
   } catch {
-    return DEFAULT_DATA;
+    return cloneDefault();
   }
 }
 
@@ -295,6 +299,197 @@ export function getTodayString(): string {
 
 export function getCurrentQuarter(): number {
   return Math.ceil((new Date().getMonth() + 1) / 3);
+}
+
+// --- Data Export ---
+
+export function exportDataAsJSON(): string {
+  return JSON.stringify(loadData(), null, 2);
+}
+
+export function exportDataAsCSV(): string {
+  const data = loadData();
+  const lines: string[] = [];
+
+  // Writing entries
+  lines.push('--- Writing Entries ---');
+  lines.push('Date,Project,WordCount,SessionMinutes,Notes');
+  data.creative.writingEntries.forEach(e => {
+    lines.push(`${e.date},${e.project},${e.wordCount},${e.sessionMinutes},"${e.notes.replace(/"/g, '""')}"`);
+  });
+
+  // Tech log entries
+  lines.push('');
+  lines.push('--- Tech Log Entries ---');
+  lines.push('Date,Project,Task,HoursSpent,Milestone,Completed');
+  data.tech.logEntries.forEach(e => {
+    lines.push(`${e.date},${e.project},"${e.task.replace(/"/g, '""')}",${e.hoursSpent},"${e.milestone.replace(/"/g, '""')}",${e.completed}`);
+  });
+
+  // Media entries
+  lines.push('');
+  lines.push('--- Media Entries ---');
+  lines.push('Date,Type,Title,Creator,Rating,Notes,Completed');
+  data.media.entries.forEach(e => {
+    lines.push(`${e.date},${e.type},"${e.title.replace(/"/g, '""')}","${e.creator.replace(/"/g, '""')}",${e.rating ?? ''},\"${e.notes.replace(/"/g, '""')}",${e.completed}`);
+  });
+
+  // Health entries
+  lines.push('');
+  lines.push('--- Health Entries ---');
+  lines.push('Date,Steps,Weight,LiftingSession,FreeMealUsed,Notes');
+  data.health.entries.forEach(e => {
+    lines.push(`${e.date},${e.steps},${e.weight ?? ''},${e.liftingSession},${e.freeMealUsed},"${e.notes.replace(/"/g, '""')}"`);
+  });
+
+  return lines.join('\n');
+}
+
+// --- Pace Projections ---
+
+export function getMediaPaceProjection(type: 'book' | 'film' | 'album'): {
+  current: number;
+  target: number;
+  weeklyRate: number;
+  projectedTotal: number;
+  onPace: boolean;
+  weeksToTarget: number | null;
+  projectedCompletionWeek: number | null;
+} {
+  const targets = { book: 104, film: 104, album: 100 };
+  const entries = getMediaEntries().filter(e => e.completed && e.type === type);
+  const current = entries.length;
+  const target = targets[type];
+  const week = getCurrentWeekNumber();
+
+  const weeklyRate = week > 0 ? current / week : 0;
+  const projectedTotal = Math.round(weeklyRate * 52);
+  const onPace = projectedTotal >= target;
+  const remaining = target - current;
+
+  let weeksToTarget: number | null = null;
+  let projectedCompletionWeek: number | null = null;
+  if (weeklyRate > 0 && remaining > 0) {
+    weeksToTarget = Math.ceil(remaining / weeklyRate);
+    projectedCompletionWeek = week + weeksToTarget;
+  } else if (remaining <= 0) {
+    weeksToTarget = 0;
+    projectedCompletionWeek = week;
+  }
+
+  return { current, target, weeklyRate, projectedTotal, onPace, weeksToTarget, projectedCompletionWeek };
+}
+
+// --- Weekly Word Count History (for chart) ---
+
+export function getWeeklyWordCounts(): { week: number; words: number }[] {
+  const week = getCurrentWeekNumber();
+  const result: { week: number; words: number }[] = [];
+  for (let w = 1; w <= week; w++) {
+    result.push({ week: w, words: getWeekWordCount(w) });
+  }
+  return result;
+}
+
+// --- Monthly/Quarterly Rollup ---
+
+export function getMonthlyRollup(): {
+  month: number;
+  monthName: string;
+  writingSessions: number;
+  totalWords: number;
+  techHours: number;
+  mediaCompleted: number;
+  avgSteps: number;
+  liftSessions: number;
+}[] {
+  const data = loadData();
+  const months = [];
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  const currentMonth = new Date().getMonth(); // 0-based
+
+  for (let m = 0; m <= currentMonth; m++) {
+    const year = new Date().getFullYear();
+    const monthStr = String(m + 1).padStart(2, '0');
+    const prefix = `${year}-${monthStr}`;
+
+    const writingEntries = data.creative.writingEntries.filter(e => e.date.startsWith(prefix));
+    const techEntries = data.tech.logEntries.filter(e => e.date.startsWith(prefix));
+    const mediaEntries = data.media.entries.filter(e => e.completed && e.date.startsWith(prefix));
+    const healthEntries = data.health.entries.filter(e => e.date.startsWith(prefix));
+
+    const avgSteps = healthEntries.length > 0
+      ? Math.round(healthEntries.reduce((s, e) => s + e.steps, 0) / healthEntries.length)
+      : 0;
+
+    months.push({
+      month: m + 1,
+      monthName: monthNames[m],
+      writingSessions: writingEntries.length,
+      totalWords: writingEntries.reduce((s, e) => s + e.wordCount, 0),
+      techHours: Math.round(techEntries.reduce((s, e) => s + e.hoursSpent, 0) * 10) / 10,
+      mediaCompleted: mediaEntries.length,
+      avgSteps,
+      liftSessions: healthEntries.filter(e => e.liftingSession).length,
+    });
+  }
+
+  return months;
+}
+
+export function getQuarterlyRollup(): {
+  quarter: number;
+  totalWords: number;
+  techHours: number;
+  mediaCompleted: number;
+  avgSteps: number;
+}[] {
+  const monthly = getMonthlyRollup();
+  const quarters: { quarter: number; totalWords: number; techHours: number; mediaCompleted: number; avgSteps: number }[] = [];
+
+  for (let q = 1; q <= 4; q++) {
+    const qMonths = monthly.filter(m => Math.ceil(m.month / 3) === q);
+    if (qMonths.length === 0) continue;
+    quarters.push({
+      quarter: q,
+      totalWords: qMonths.reduce((s, m) => s + m.totalWords, 0),
+      techHours: Math.round(qMonths.reduce((s, m) => s + m.techHours, 0) * 10) / 10,
+      mediaCompleted: qMonths.reduce((s, m) => s + m.mediaCompleted, 0),
+      avgSteps: Math.round(qMonths.reduce((s, m) => s + m.avgSteps, 0) / qMonths.length),
+    });
+  }
+
+  return quarters;
+}
+
+// --- Custom Checklist ---
+
+export function addCustomChecklistItem(weekNumber: number, label: string): void {
+  const data = loadData();
+  const newItem: WeeklyChecklistItem = {
+    id: generateId(),
+    weekNumber,
+    label,
+    completed: false,
+  };
+  data.weeklyChecklist.push(newItem);
+  saveData(data);
+}
+
+export function deleteChecklistItem(id: string): void {
+  const data = loadData();
+  data.weeklyChecklist = data.weeklyChecklist.filter(c => c.id !== id);
+  saveData(data);
+}
+
+export function updateChecklistItemLabel(id: string, label: string): void {
+  const data = loadData();
+  const item = data.weeklyChecklist.find(c => c.id === id);
+  if (item) {
+    item.label = label;
+    saveData(data);
+  }
 }
 
 // --- Summary for AI Coach ---

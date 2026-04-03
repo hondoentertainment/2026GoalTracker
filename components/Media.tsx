@@ -8,6 +8,7 @@ import {
   deleteMediaEntry,
   getCurrentWeekNumber,
   getTodayString,
+  getMediaPaceProjection,
 } from '../services/storageService';
 
 const TARGETS = { book: 104, film: 104, album: 100 } as const;
@@ -44,6 +45,7 @@ const Media: React.FC = () => {
   const [formRating, setFormRating] = useState<number>(5);
   const [formNotes, setFormNotes] = useState('');
   const [formCompleted, setFormCompleted] = useState(true);
+  const [formError, setFormError] = useState('');
 
   const reload = () => setEntries(getMediaEntries());
 
@@ -58,7 +60,11 @@ const Media: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formTitle.trim()) return;
+    if (!formTitle.trim()) {
+      setFormError('Title is required.');
+      return;
+    }
+    setFormError('');
     addMediaEntry({
       date: getTodayString(),
       type: formType,
@@ -209,6 +215,9 @@ const Media: React.FC = () => {
             Completed
           </label>
 
+          {formError && (
+            <p className="text-red-400 text-xs font-medium">{formError}</p>
+          )}
           <button
             type="submit"
             className="px-6 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold text-sm transition-colors"
@@ -229,8 +238,7 @@ const Media: React.FC = () => {
           const target = TARGETS[type];
           const pct = target > 0 ? Math.round((count / target) * 1000) / 10 : 0;
 
-          const expected = weekNumber * PACE_PER_WEEK[type];
-          const onPace = count >= expected;
+          const projection = getMediaPaceProjection(type);
 
           const recent = [...completed]
             .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
@@ -245,12 +253,12 @@ const Media: React.FC = () => {
                 </div>
                 <span
                   className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
-                    onPace
+                    projection.onPace
                       ? 'bg-green-400/10 text-green-400'
                       : 'bg-red-400/10 text-red-400'
                   }`}
                 >
-                  {onPace ? 'On Pace' : 'Behind Pace'}
+                  {projection.onPace ? 'On Pace' : 'Behind Pace'}
                 </span>
               </div>
 
@@ -268,9 +276,30 @@ const Media: React.FC = () => {
                 />
               </div>
 
-              <p className="text-[10px] text-slate-500 mt-2">
-                Expected by week {weekNumber}: {expected} &middot; Actual: {count}
-              </p>
+              {/* Pace Projection */}
+              <div className="mt-3 p-2.5 bg-slate-800/50 rounded-lg border border-slate-700/50 space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-slate-500">Rate</span>
+                  <span className="text-slate-400">{projection.weeklyRate.toFixed(1)}/week</span>
+                </div>
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-slate-500">Projected year-end</span>
+                  <span className={projection.onPace ? 'text-green-400' : 'text-red-400'}>
+                    {projection.projectedTotal} / {target}
+                  </span>
+                </div>
+                {projection.projectedCompletionWeek !== null && projection.projectedCompletionWeek > weekNumber && (
+                  <div className="flex justify-between text-[10px]">
+                    <span className="text-slate-500">Target hit by</span>
+                    <span className={projection.projectedCompletionWeek <= 52 ? 'text-green-400' : 'text-red-400'}>
+                      Week {projection.projectedCompletionWeek}{projection.projectedCompletionWeek > 52 ? ' (overflow)' : ''}
+                    </span>
+                  </div>
+                )}
+                {projection.weeksToTarget === 0 && (
+                  <div className="text-[10px] text-green-400 font-bold text-center">Target reached!</div>
+                )}
+              </div>
 
               {recent.length > 0 && (
                 <div className="mt-4 space-y-1.5">

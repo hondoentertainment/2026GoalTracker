@@ -1,8 +1,8 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { getCoachResponse } from '../services/geminiService';
+import { getCoachResponse, isCoachAvailable } from '../services/geminiService';
 import { getDataSummaryForCoach } from '../services/storageService';
-import { Send, User, Bot, Loader2, ChevronDown, ChevronUp, BarChart3 } from 'lucide-react';
+import { Send, User, Bot, Loader2, ChevronDown, ChevronUp, BarChart3, AlertTriangle } from 'lucide-react';
 
 const Coach: React.FC = () => {
   const [messages, setMessages] = useState<{ role: 'user' | 'coach'; text: string }[]>([
@@ -52,6 +52,15 @@ const Coach: React.FC = () => {
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+        {!isCoachAvailable() && (
+          <div className="flex items-start gap-3 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl">
+            <AlertTriangle size={16} className="text-yellow-400 mt-0.5 shrink-0" />
+            <div className="text-xs text-yellow-300">
+              <p className="font-semibold mb-1">API key not configured</p>
+              <p className="text-yellow-400/80">Add <code className="bg-slate-800 px-1 rounded">GEMINI_API_KEY</code> to your <code className="bg-slate-800 px-1 rounded">.env.local</code> file to enable the AI coach.</p>
+            </div>
+          </div>
+        )}
         {/* Current Stats collapsible section */}
         <div className="bg-slate-800/50 rounded-xl border border-slate-700/50">
           <button

@@ -20,8 +20,18 @@ When asked, provide motivation, creative prompts for Xavier Transport, technical
 Reference the user's actual progress numbers from the LIVE DATA section below when giving advice. Be specific — mention their real streak count, word totals, completion percentages, and weekly stats to make your coaching concrete and personalized.
 `;
 
+export function isCoachAvailable(): boolean {
+  return Boolean(process.env.API_KEY || process.env.GEMINI_API_KEY);
+}
+
 export const getCoachResponse = async (userPrompt: string, dataSummary: string) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+
+  if (!apiKey) {
+    return "The AI coach requires a Gemini API key. Add GEMINI_API_KEY to your .env.local file to enable this feature. The blueprint remains — keep shipping.";
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
   const systemInstruction = `${BLUEPRINT_CONTEXT}\n--- LIVE DATA ---\n${dataSummary}`;
   try {
     const response = await ai.models.generateContent({
@@ -35,6 +45,10 @@ export const getCoachResponse = async (userPrompt: string, dataSummary: string) 
     return response.text;
   } catch (error) {
     console.error("Gemini Error:", error);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    if (errMsg.includes('API_KEY') || errMsg.includes('401') || errMsg.includes('403')) {
+      return "Invalid or expired API key. Check your GEMINI_API_KEY in .env.local.";
+    }
     return "The coach is currently offline, but the blueprint remains. Keep shipping.";
   }
 };

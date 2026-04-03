@@ -33,6 +33,7 @@ const Tech: React.FC = () => {
   const [logHours, setLogHours] = useState(0);
   const [logMilestone, setLogMilestone] = useState('');
   const [logCompleted, setLogCompleted] = useState(false);
+  const [logFormError, setLogFormError] = useState('');
 
   const refreshData = () => {
     const data = loadData();
@@ -57,6 +58,15 @@ const Tech: React.FC = () => {
 
   const handleLogSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!logTask.trim()) {
+      setLogFormError('Task description is required.');
+      return;
+    }
+    if (logHours <= 0) {
+      setLogFormError('Hours must be greater than 0.');
+      return;
+    }
+    setLogFormError('');
     addTechLogEntry({
       date: new Date().toISOString().split('T')[0],
       project: logProject,
@@ -339,6 +349,9 @@ const Tech: React.FC = () => {
                 </label>
               </div>
             </div>
+            {logFormError && (
+              <p className="text-red-400 text-xs font-medium">{logFormError}</p>
+            )}
             <button
               type="submit"
               className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-lg transition-colors cursor-pointer"
