@@ -1,6 +1,7 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useContext } from 'react';
 import { PenTool, MessageSquare, BookOpen, Flame, Plus, X, Trash2 } from 'lucide-react';
+import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { WritingEntry } from '../types';
 import {
   loadData,
@@ -8,7 +9,13 @@ import {
   getWritingEntries,
   deleteWritingEntry,
   getTodayString,
+  getWeeklyWordCounts,
+  getStreakWarning,
+  getCumulativeWords,
+  validateDate,
+  validateWritingEntry,
 } from '../services/storageService';
+import { ToastContext } from '../App';
 
 const PROJECT_OPTIONS: { value: WritingEntry['project']; label: string }[] = [
   { value: 'xavier-transport', label: 'Xavier Transport' },
@@ -39,9 +46,15 @@ function formatDateShort(dateStr: string): string {
 }
 
 const Creative: React.FC = () => {
+  const toast = useContext(ToastContext);
   const [entries, setEntries] = useState<WritingEntry[]>([]);
   const [streakDays, setStreakDays] = useState(0);
   const [showForm, setShowForm] = useState(false);
+
+  const [wordCountChart, setWordCountChart] = useState<{ week: number; words: number }[]>([]);
+  const [cumulativeChart, setCumulativeChart] = useState<{ week: number; cumulative: number }[]>([]);
+  const [streakWarning, setStreakWarning] = useState<{ atRisk: boolean; message: string; daysWithout: number }>({ atRisk: false, message: '', daysWithout: 0 });
+  const [formError, setFormError] = useState('');
 
   // Form fields
   const [formProject, setFormProject] = useState<WritingEntry['project']>('xavier-transport');
@@ -54,6 +67,9 @@ const Creative: React.FC = () => {
     const data = loadData();
     setEntries(data.creative.writingEntries);
     setStreakDays(data.creative.streakDays);
+    setWordCountChart(getWeeklyWordCounts());
+    setCumulativeChart(getCumulativeWords());
+    setStreakWarning(getStreakWarning());
   }, []);
 
   useEffect(() => {
@@ -64,7 +80,27 @@ const Creative: React.FC = () => {
     e.preventDefault();
     const wordCount = parseInt(formWordCount, 10);
     const sessionMinutes = parseInt(formMinutes, 10);
-    if (!wordCount || !sessionMinutes) return;
+
+    const dateValidation = validateDate(formDate);
+    if (!dateValidation.valid) {
+      setFormError(dateValidation.error!);
+      return;
+    }
+    const entryValidation = validateWritingEntry(wordCount, sessionMinutes);
+    if (!entryValidation.valid) {
+      setFormError(entryValidation.error!);
+      return;
+    }
+
+    if (!wordCount || wordCount <= 0) {
+      setFormError('Word count must be greater than 0.');
+      return;
+    }
+    if (!sessionMinutes || sessionMinutes <= 0) {
+      setFormError('Duration must be greater than 0.');
+      return;
+    }
+    setFormError('');
 
     addWritingEntry({
       date: formDate,
@@ -73,6 +109,8 @@ const Creative: React.FC = () => {
       sessionMinutes,
       notes: formNotes,
     });
+
+    toast('Session logged — ' + wordCount + ' words');
 
     // Reset form
     setFormWordCount('');
@@ -86,6 +124,7 @@ const Creative: React.FC = () => {
 
   const handleDelete = (id: string) => {
     deleteWritingEntry(id);
+    toast('Entry deleted', 'info');
     refreshData();
   };
 
@@ -111,6 +150,16 @@ const Creative: React.FC = () => {
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {streakWarning.atRisk && (
+        <div className={`px-4 py-3 rounded-xl border flex items-center space-x-3 ${
+          streakWarning.daysWithout >= 2
+            ? 'bg-slate-500/10 border-slate-500/30 text-slate-300'
+            : 'bg-orange-500/10 border-orange-500/30 text-orange-300'
+        }`}>
+          <Flame size={18} />
+          <span className="text-sm font-medium">{streakWarning.message}</span>
+        </div>
+      )}
       <header className="flex justify-between items-end">
         <div>
           <h2 className="text-3xl font-bold">Creative Work</h2>
@@ -195,6 +244,9 @@ const Creative: React.FC = () => {
               className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-orange-500"
             />
           </div>
+          {formError && (
+            <p className="text-red-400 text-xs font-medium">{formError}</p>
+          )}
           <div className="flex justify-end">
             <button
               type="submit"
@@ -264,6 +316,56 @@ const Creative: React.FC = () => {
         </div>
         <p className="mt-4 text-xs text-slate-500 text-center uppercase tracking-widest font-bold">Never miss twice rule enabled.</p>
       </div>
+
+      {/* Word Count Trend Chart */}
+      {wordCountChart.some(w => w.words > 0) && (
+        <div className="bg-slate-800/40 p-8 rounded-2xl border border-slate-700/50">
+          <h3 className="text-lg font-bold mb-4">Weekly Word Count Trend</h3>
+          <div className="h-[250px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={wordCountChart}>
+                <defs>
+                  <linearGradient id="colorWords" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#f97316" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#f97316" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                <XAxis dataKey="week" stroke="#64748b" tickFormatter={(v) => `W${v}`} />
+                <YAxis stroke="#64748b" />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#f8fafc' }}
+                  itemStyle={{ color: '#f97316' }}
+                  formatter={(value: number) => [`${value.toLocaleString()} words`, 'Words']}
+                />
+                <Area type="monotone" dataKey="words" stroke="#f97316" fillOpacity={1} fill="url(#colorWords)" name="Words" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* Cumulative Word Chart */}
+      {cumulativeChart.length > 0 && (
+        <div className="bg-slate-800/40 p-8 rounded-2xl border border-slate-700/50">
+          <h3 className="text-lg font-bold mb-4">Cumulative Words Written</h3>
+          <div className="h-[250px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={cumulativeChart}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                <XAxis dataKey="week" stroke="#64748b" tickFormatter={(v) => `W${v}`} />
+                <YAxis stroke="#64748b" />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#f8fafc' }}
+                  itemStyle={{ color: '#22c55e' }}
+                  formatter={(value: number) => [`${value.toLocaleString()} words`, 'Cumulative']}
+                />
+                <Line type="monotone" dataKey="cumulative" stroke="#22c55e" strokeWidth={2} dot={false} name="Cumulative" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       {/* Recent Entries */}
       {recentEntries.length > 0 && (

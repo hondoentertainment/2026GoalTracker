@@ -1,13 +1,17 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { getCoachResponse } from '../services/geminiService';
-import { getDataSummaryForCoach } from '../services/storageService';
-import { Send, User, Bot, Loader2, ChevronDown, ChevronUp, BarChart3 } from 'lucide-react';
+import { getCoachResponse, isCoachAvailable } from '../services/geminiService';
+import { getDataSummaryForCoach, getCoachMessages, saveCoachMessage, clearCoachMessages } from '../services/storageService';
+import { CoachMessage } from '../types';
+import { Send, User, Bot, Loader2, ChevronDown, ChevronUp, BarChart3, AlertTriangle, Trash2 } from 'lucide-react';
+
+const DEFAULT_WELCOME: { role: 'user' | 'coach'; text: string } = {
+  role: 'coach',
+  text: "Ready to execute the 2026 blueprint. What's on your mind today?",
+};
 
 const Coach: React.FC = () => {
-  const [messages, setMessages] = useState<{ role: 'user' | 'coach'; text: string }[]>([
-    { role: 'coach', text: "Ready to execute the 2026 blueprint. What's on your mind today?" }
-  ]);
+  const [messages, setMessages] = useState<{ role: 'user' | 'coach'; text: string }[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
@@ -22,6 +26,12 @@ const Coach: React.FC = () => {
 
   useEffect(() => {
     setDataSummary(getDataSummaryForCoach());
+    const saved = getCoachMessages();
+    if (saved.length > 0) {
+      setMessages(saved.map(m => ({ role: m.role, text: m.text })));
+    } else {
+      setMessages([DEFAULT_WELCOME]);
+    }
   }, []);
 
   const handleSend = async () => {
@@ -29,13 +39,17 @@ const Coach: React.FC = () => {
 
     const userMsg = input;
     setInput('');
-    setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+    const userMessage = { role: 'user' as const, text: userMsg };
+    setMessages(prev => [...prev, userMessage]);
+    saveCoachMessage({ role: 'user', text: userMsg, timestamp: new Date().toISOString() });
     setLoading(true);
 
     const freshSummary = getDataSummaryForCoach();
     setDataSummary(freshSummary);
     const response = await getCoachResponse(userMsg, freshSummary);
-    setMessages(prev => [...prev, { role: 'coach', text: response || "No response." }]);
+    const coachText = response || "No response.";
+    setMessages(prev => [...prev, { role: 'coach', text: coachText }]);
+    saveCoachMessage({ role: 'coach', text: coachText, timestamp: new Date().toISOString() });
     setLoading(false);
   };
 
@@ -48,10 +62,31 @@ const Coach: React.FC = () => {
           <Bot size={18} className="text-blue-400" />
           <span>Blueprint Assistant</span>
         </h3>
-        <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-bold uppercase tracking-widest">Powered by Gemini</span>
+        <div className="flex items-center space-x-2">
+          <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-bold uppercase tracking-widest">Powered by Gemini</span>
+          <button
+            onClick={() => {
+              clearCoachMessages();
+              setMessages([DEFAULT_WELCOME]);
+            }}
+            className="text-slate-500 hover:text-red-400 transition-colors p-1"
+            title="Clear chat history"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+        {!isCoachAvailable() && (
+          <div className="flex items-start gap-3 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl">
+            <AlertTriangle size={16} className="text-yellow-400 mt-0.5 shrink-0" />
+            <div className="text-xs text-yellow-300">
+              <p className="font-semibold mb-1">API key not configured</p>
+              <p className="text-yellow-400/80">Add <code className="bg-slate-800 px-1 rounded">GEMINI_API_KEY</code> to your <code className="bg-slate-800 px-1 rounded">.env.local</code> file to enable the AI coach.</p>
+            </div>
+          </div>
+        )}
         {/* Current Stats collapsible section */}
         <div className="bg-slate-800/50 rounded-xl border border-slate-700/50">
           <button

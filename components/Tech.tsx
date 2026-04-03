@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
-import { Rocket, Package, BrainCircuit, CheckCircle, Plus, Trash2, X } from 'lucide-react';
+import React, { useState, useEffect, useContext } from 'react';
+import { Rocket, Package, BrainCircuit, CheckCircle, Plus, Trash2, X, Pencil } from 'lucide-react';
 import {
   loadData,
   addTechLogEntry,
@@ -9,10 +9,14 @@ import {
   updateCurrentPhase,
   getCurrentWeekNumber,
   getWeekDates,
+  updateSideApp,
+  validateTechEntry,
 } from '../services/storageService';
 import { TechLogEntry } from '../types';
+import { ToastContext } from '../App';
 
 const Tech: React.FC = () => {
+  const toast = useContext(ToastContext);
   const [deepSeatsProgress, setDeepSeatsProgress] = useState(0);
   const [currentPhase, setCurrentPhase] = useState(1);
   const [sideAppName, setSideAppName] = useState('');
@@ -22,6 +26,11 @@ const Tech: React.FC = () => {
   // Form visibility
   const [showProgressForm, setShowProgressForm] = useState(false);
   const [showLogForm, setShowLogForm] = useState(false);
+  const [showSideAppForm, setShowSideAppForm] = useState(false);
+
+  // Side app form state
+  const [sideAppNameInput, setSideAppNameInput] = useState('');
+  const [sideAppDaysInput, setSideAppDaysInput] = useState(0);
 
   // Progress form state
   const [progressInput, setProgressInput] = useState(0);
@@ -33,6 +42,7 @@ const Tech: React.FC = () => {
   const [logHours, setLogHours] = useState(0);
   const [logMilestone, setLogMilestone] = useState('');
   const [logCompleted, setLogCompleted] = useState(false);
+  const [logFormError, setLogFormError] = useState('');
 
   const refreshData = () => {
     const data = loadData();
@@ -57,6 +67,12 @@ const Tech: React.FC = () => {
 
   const handleLogSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const validation = validateTechEntry(logTask, logHours);
+    if (!validation.valid) {
+      setLogFormError(validation.error || 'Invalid entry.');
+      return;
+    }
+    setLogFormError('');
     addTechLogEntry({
       date: new Date().toISOString().split('T')[0],
       project: logProject,
@@ -65,6 +81,7 @@ const Tech: React.FC = () => {
       milestone: logMilestone,
       completed: logCompleted,
     });
+    toast('Work logged — ' + logHours + 'h');
     setLogTask('');
     setLogHours(0);
     setLogMilestone('');
@@ -75,6 +92,7 @@ const Tech: React.FC = () => {
 
   const handleDeleteEntry = (id: string) => {
     deleteTechLogEntry(id);
+    toast('Entry deleted', 'info');
     refreshData();
   };
 
@@ -222,10 +240,68 @@ const Tech: React.FC = () => {
       {/* Side App + AI Curriculum */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl">
-          <div className="flex items-center space-x-3 mb-6">
-            <Package className="text-indigo-400" />
-            <h3 className="text-lg font-bold">Monthly Side App</h3>
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center space-x-3">
+              <Package className="text-indigo-400" />
+              <h3 className="text-lg font-bold">Monthly Side App</h3>
+            </div>
+            <button
+              onClick={() => {
+                setSideAppNameInput(sideAppName);
+                setSideAppDaysInput(sideAppDaysRemaining);
+                setShowSideAppForm(!showSideAppForm);
+              }}
+              className="text-slate-500 hover:text-indigo-400 transition-colors cursor-pointer"
+            >
+              <Pencil size={16} />
+            </button>
           </div>
+          {showSideAppForm && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                updateSideApp(sideAppNameInput, sideAppDaysInput);
+                setShowSideAppForm(false);
+                refreshData();
+              }}
+              className="mb-4 p-4 bg-slate-800/50 rounded-xl border border-slate-700 space-y-4"
+            >
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">App Name</label>
+                <input
+                  type="text"
+                  value={sideAppNameInput}
+                  onChange={e => setSideAppNameInput(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Days Remaining</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={sideAppDaysInput}
+                  onChange={e => setSideAppDaysInput(Number(e.target.value))}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div className="flex space-x-2">
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-lg transition-colors cursor-pointer"
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowSideAppForm(false)}
+                  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-semibold rounded-lg transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
           <div className="bg-slate-800/50 p-4 rounded-xl mb-4 border border-slate-700">
             <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Current Sprint</p>
             <p className="text-md font-semibold text-slate-200">{sideAppName}</p>
@@ -339,6 +415,9 @@ const Tech: React.FC = () => {
                 </label>
               </div>
             </div>
+            {logFormError && (
+              <p className="text-red-400 text-xs font-medium">{logFormError}</p>
+            )}
             <button
               type="submit"
               className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-lg transition-colors cursor-pointer"

@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { BookMarked, PlayCircle, Music, Plus, Trash2, Star, Check, X } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { MediaEntry } from '../types';
+import { ToastContext } from '../App';
 import {
   getMediaEntries,
   addMediaEntry,
@@ -8,6 +10,8 @@ import {
   deleteMediaEntry,
   getCurrentWeekNumber,
   getTodayString,
+  getMediaPaceProjection,
+  getCumulativeMedia,
 } from '../services/storageService';
 
 const TARGETS = { book: 104, film: 104, album: 100 } as const;
@@ -36,7 +40,9 @@ function renderStars(rating: number) {
 }
 
 const Media: React.FC = () => {
+  const toast = useContext(ToastContext);
   const [entries, setEntries] = useState<MediaEntry[]>([]);
+  const [mediaPage, setMediaPage] = useState(0);
   const [showForm, setShowForm] = useState(false);
   const [formType, setFormType] = useState<MediaType>('book');
   const [formTitle, setFormTitle] = useState('');
@@ -44,6 +50,7 @@ const Media: React.FC = () => {
   const [formRating, setFormRating] = useState<number>(5);
   const [formNotes, setFormNotes] = useState('');
   const [formCompleted, setFormCompleted] = useState(true);
+  const [formError, setFormError] = useState('');
 
   const reload = () => setEntries(getMediaEntries());
 
@@ -58,7 +65,11 @@ const Media: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formTitle.trim()) return;
+    if (!formTitle.trim()) {
+      setFormError('Title is required.');
+      return;
+    }
+    setFormError('');
     addMediaEntry({
       date: getTodayString(),
       type: formType,
@@ -68,6 +79,7 @@ const Media: React.FC = () => {
       notes: formNotes.trim(),
       completed: formCompleted,
     });
+    toast(formTitle + ' added to ' + TYPE_CONFIG[formType].label);
     setFormTitle('');
     setFormCreator('');
     setFormRating(5);
@@ -79,6 +91,7 @@ const Media: React.FC = () => {
 
   const handleDelete = (id: string) => {
     deleteMediaEntry(id);
+    toast('Entry deleted', 'info');
     reload();
   };
 
@@ -209,6 +222,9 @@ const Media: React.FC = () => {
             Completed
           </label>
 
+          {formError && (
+            <p className="text-red-400 text-xs font-medium">{formError}</p>
+          )}
           <button
             type="submit"
             className="px-6 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold text-sm transition-colors"
@@ -229,8 +245,7 @@ const Media: React.FC = () => {
           const target = TARGETS[type];
           const pct = target > 0 ? Math.round((count / target) * 1000) / 10 : 0;
 
-          const expected = weekNumber * PACE_PER_WEEK[type];
-          const onPace = count >= expected;
+          const projection = getMediaPaceProjection(type);
 
           const recent = [...completed]
             .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
@@ -245,12 +260,12 @@ const Media: React.FC = () => {
                 </div>
                 <span
                   className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
-                    onPace
+                    projection.onPace
                       ? 'bg-green-400/10 text-green-400'
                       : 'bg-red-400/10 text-red-400'
                   }`}
                 >
-                  {onPace ? 'On Pace' : 'Behind Pace'}
+                  {projection.onPace ? 'On Pace' : 'Behind Pace'}
                 </span>
               </div>
 
@@ -268,9 +283,30 @@ const Media: React.FC = () => {
                 />
               </div>
 
-              <p className="text-[10px] text-slate-500 mt-2">
-                Expected by week {weekNumber}: {expected} &middot; Actual: {count}
-              </p>
+              {/* Pace Projection */}
+              <div className="mt-3 p-2.5 bg-slate-800/50 rounded-lg border border-slate-700/50 space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-slate-500">Rate</span>
+                  <span className="text-slate-400">{projection.weeklyRate.toFixed(1)}/week</span>
+                </div>
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-slate-500">Projected year-end</span>
+                  <span className={projection.onPace ? 'text-green-400' : 'text-red-400'}>
+                    {projection.projectedTotal} / {target}
+                  </span>
+                </div>
+                {projection.projectedCompletionWeek !== null && projection.projectedCompletionWeek > weekNumber && (
+                  <div className="flex justify-between text-[10px]">
+                    <span className="text-slate-500">Target hit by</span>
+                    <span className={projection.projectedCompletionWeek <= 52 ? 'text-green-400' : 'text-red-400'}>
+                      Week {projection.projectedCompletionWeek}{projection.projectedCompletionWeek > 52 ? ' (overflow)' : ''}
+                    </span>
+                  </div>
+                )}
+                {projection.weeksToTarget === 0 && (
+                  <div className="text-[10px] text-green-400 font-bold text-center">Target reached!</div>
+                )}
+              </div>
 
               {recent.length > 0 && (
                 <div className="mt-4 space-y-1.5">
@@ -291,12 +327,35 @@ const Media: React.FC = () => {
         })}
       </div>
 
+      {/* Cumulative Media Chart */}
+      {(() => {
+        const cumulativeData = getCumulativeMedia();
+        if (cumulativeData.length === 0) return null;
+        return (
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+            <h3 className="text-lg font-bold mb-4">Cumulative Progress</h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={cumulativeData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="week" tick={{ fontSize: 12, fill: '#94a3b8' }} label={{ value: 'Week', position: 'insideBottom', offset: -5, fill: '#94a3b8' }} />
+                <YAxis tick={{ fontSize: 12, fill: '#94a3b8' }} />
+                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem' }} />
+                <Legend />
+                <Line type="monotone" dataKey="books" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="films" stroke="#ef4444" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="albums" stroke="#a855f7" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        );
+      })()}
+
       {/* Full Media Log */}
       {sortedEntries.length > 0 && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
           <h3 className="text-lg font-bold mb-4">Full Media Log</h3>
           <div className="space-y-2">
-            {sortedEntries.map((entry) => {
+            {sortedEntries.slice(mediaPage * 20, (mediaPage + 1) * 20).map((entry) => {
               const cfg = TYPE_CONFIG[entry.type];
               const colors = colorMap[cfg.color];
               const Icon = cfg.icon;
@@ -342,6 +401,25 @@ const Media: React.FC = () => {
                 </div>
               );
             })}
+          </div>
+          {/* Pagination buttons */}
+          <div className="flex items-center gap-3 mt-4">
+            {mediaPage > 0 && (
+              <button
+                onClick={() => setMediaPage(mediaPage - 1)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-sm font-medium transition-colors"
+              >
+                Show Less
+              </button>
+            )}
+            {(mediaPage + 1) * 20 < sortedEntries.length && (
+              <button
+                onClick={() => setMediaPage(mediaPage + 1)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-sm font-medium transition-colors"
+              >
+                Show More
+              </button>
+            )}
           </div>
         </div>
       )}
