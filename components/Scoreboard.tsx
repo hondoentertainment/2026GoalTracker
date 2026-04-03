@@ -1,7 +1,7 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useContext, useRef } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
-import { CheckCircle2, Circle, Download, Plus, Trash2, Pencil, X } from 'lucide-react';
+import { CheckCircle2, Circle, Download, Upload, Plus, Trash2, Pencil, X, Save, ClipboardPaste } from 'lucide-react';
 import {
   getCurrentWeekNumber,
   getWeekWritingDays,
@@ -19,8 +19,13 @@ import {
   getQuarterlyRollup,
   exportDataAsJSON,
   exportDataAsCSV,
+  importDataFromJSON,
+  saveChecklistAsTemplate,
+  applyChecklistTemplate,
 } from '../services/storageService';
 import { WeeklyChecklistItem } from '../types';
+import { ToastContext } from '../App';
+import WeeklyDigest from './WeeklyDigest';
 
 interface WeeklyChartPoint {
   week: number;
@@ -31,6 +36,8 @@ interface WeeklyChartPoint {
 }
 
 const Scoreboard: React.FC = () => {
+  const addToast = useContext(ToastContext);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [weekNumber, setWeekNumber] = useState(1);
   const [writingDays, setWritingDays] = useState(0);
   const [deepSeatsProgress, setDeepSeatsProgress] = useState(0);
@@ -124,6 +131,40 @@ const Scoreboard: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      const result = importDataFromJSON(content);
+      if (result.success) {
+        addToast('Data imported successfully!', 'success');
+        refreshData();
+      } else {
+        addToast(result.error || 'Import failed', 'error');
+      }
+    };
+    reader.readAsText(file);
+    // Reset the input so the same file can be re-imported
+    e.target.value = '';
+  };
+
+  const handleSaveTemplate = () => {
+    saveChecklistAsTemplate(weekNumber);
+    addToast('Checklist saved as template', 'success');
+  };
+
+  const handleApplyTemplate = () => {
+    const items = applyChecklistTemplate(weekNumber);
+    if (items.length > 0) {
+      addToast('Template applied to this week', 'success');
+      refreshData();
+    } else {
+      addToast('No template found. Save one first.', 'info');
+    }
+  };
+
   const totalMedia = mediaCounts.books + mediaCounts.films + mediaCounts.albums;
   const monthlyData = getMonthlyRollup();
   const quarterlyData = getQuarterlyRollup();
@@ -159,6 +200,21 @@ const Scoreboard: React.FC = () => {
             <Download size={14} />
             CSV
           </button>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition-colors"
+            title="Import JSON"
+          >
+            <Upload size={14} />
+            Import
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            onChange={handleImport}
+            className="hidden"
+          />
         </div>
       </header>
 
@@ -397,7 +453,25 @@ const Scoreboard: React.FC = () => {
             Add
           </button>
         </div>
+        <div className="mt-4 flex items-center gap-2">
+          <button
+            onClick={handleSaveTemplate}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition-colors"
+          >
+            <Save size={14} />
+            Save as Template
+          </button>
+          <button
+            onClick={handleApplyTemplate}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition-colors"
+          >
+            <ClipboardPaste size={14} />
+            Apply Template
+          </button>
+        </div>
       </div>
+
+      <WeeklyDigest />
     </div>
   );
 };

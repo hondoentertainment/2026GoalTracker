@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import {
   Footprints,
   Weight,
@@ -17,11 +17,16 @@ import {
   getWeekHealthAvg,
   getCurrentWeekNumber,
   getTodayString,
+  validateDate,
+  validateHealthEntry,
 } from '../services/storageService';
 import { HealthEntry } from '../types';
+import { ToastContext } from '../App';
 
 const Health: React.FC = () => {
+  const toast = useContext(ToastContext);
   const [entries, setEntries] = useState<HealthEntry[]>([]);
+  const [healthPage, setHealthPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
   const [formDate, setFormDate] = useState(getTodayString());
   const [formSteps, setFormSteps] = useState('');
@@ -92,16 +97,22 @@ const Health: React.FC = () => {
   // --- Form submit ---
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    const dateValidation = validateDate(formDate);
+    if (!dateValidation.valid) {
+      setFormError(dateValidation.error!);
+      return;
+    }
+
     const steps = parseInt(formSteps, 10);
-    if (isNaN(steps) || steps < 0) {
-      setFormError('Steps must be a valid non-negative number.');
-      return;
-    }
     const weight = formWeight ? parseFloat(formWeight) : undefined;
-    if (formWeight && (isNaN(weight!) || weight! <= 0)) {
-      setFormError('Weight must be a valid positive number.');
+
+    const healthValidation = validateHealthEntry(steps, weight);
+    if (!healthValidation.valid) {
+      setFormError(healthValidation.error!);
       return;
     }
+
     setFormError('');
 
     addHealthEntry({
@@ -112,6 +123,7 @@ const Health: React.FC = () => {
       freeMealUsed: formFreeMeal,
       notes: formNotes,
     });
+    toast('Health entry logged — ' + steps + ' steps');
 
     // Reset form
     setFormSteps('');
@@ -126,13 +138,13 @@ const Health: React.FC = () => {
 
   const handleDelete = (id: string) => {
     deleteHealthEntry(id);
+    toast('Entry deleted', 'info');
     reload();
   };
 
-  // --- Recent entries (last 7) ---
+  // --- Recent entries (paginated, 10 per page) ---
   const recentEntries = [...entries]
-    .sort((a, b) => b.date.localeCompare(a.date))
-    .slice(0, 7);
+    .sort((a, b) => b.date.localeCompare(a.date));
 
   // --- Weekly trend (last 4 weeks) ---
   const weeklyTrend = [];
@@ -194,6 +206,7 @@ const Health: React.FC = () => {
                 className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required
                 min={0}
+                max={100000}
               />
             </div>
             <div>
@@ -416,7 +429,7 @@ const Health: React.FC = () => {
           <p className="text-slate-600 text-sm">No entries yet.</p>
         ) : (
           <div className="space-y-2">
-            {recentEntries.map((entry) => (
+            {recentEntries.slice(0, healthPage * 10).map((entry) => (
               <div
                 key={entry.id}
                 className="flex items-center justify-between bg-slate-800/50 rounded-xl px-4 py-3"
@@ -453,6 +466,14 @@ const Health: React.FC = () => {
                 </button>
               </div>
             ))}
+            {healthPage * 10 < recentEntries.length && (
+              <button
+                onClick={() => setHealthPage(healthPage + 1)}
+                className="mt-3 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-sm font-medium transition-colors"
+              >
+                Show More
+              </button>
+            )}
           </div>
         )}
       </div>
