@@ -1,8 +1,8 @@
-import { Component, type ReactNode, type ErrorInfo } from 'react';
+import React from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 
 interface Props {
-  children: ReactNode;
+  children: React.ReactNode;
   section?: string;
 }
 
@@ -11,22 +11,28 @@ interface State {
   error?: Error;
 }
 
-class ErrorBoundary extends Component<Props, State> {
-  override state: State = { hasError: false };
+class ErrorBoundary extends React.Component<Props, State> {
+  declare readonly props: Readonly<Props>;
+  declare state: State;
+
+  constructor(props: Props) {
+    super(props);
+    this.state = { hasError: false };
+  }
 
   static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
   }
 
-  override componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error(`ErrorBoundary [${this.props.section || 'unknown'}]:`, error, errorInfo);
   }
 
-  private handleRetry = () => {
+  handleRetry = () => {
     this.setState({ hasError: false, error: undefined });
   };
 
-  override render() {
+  render() {
     if (this.state.hasError) {
       return (
         <div className="bg-red-500/5 border border-red-500/20 rounded-2xl p-8 text-center">
