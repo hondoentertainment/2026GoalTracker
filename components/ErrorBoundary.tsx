@@ -29,7 +29,12 @@ class ErrorBoundary extends React.Component<Props, State> {
   }
 
   handleRetry = () => {
-    this.setState({ hasError: false, error: undefined });
+    // React 19 built-in types do not expose setState on the class instance.
+    // This is safe at runtime because React.Component always provides it.
+    (this as unknown as { setState(s: Partial<State>): void }).setState({
+      hasError: false,
+      error: undefined,
+    });
   };
 
   render() {
